@@ -17,9 +17,12 @@ len_gap2 = 9 # This is the len of the chars of the second gap in file (smfh)
 len_bar = 8 # smfh
 len_n_max = len_nb - len_bar + 1 # smfh
 
-ictd_resp = urllib.request.urlopen(ictd_url)
+# Custom error for when the name of the barcode is too long for the file (smh)
+class NameTooLongError(ValueError):
+    pass
 
 # Get the content from the ICTD site
+ictd_resp = urllib.request.urlopen(ictd_url)
 ictd_content = [l.decode('utf-8').strip('\n')
                 for l in ictd_resp.readlines()
                 if l.decode('utf-8').strip('\n')]
@@ -31,10 +34,6 @@ cassette_flag = False
 tr_flag = False
 # Column number
 i = 1
-
-# Custom error for when the name of the barcode is too long for the file (smh)
-class NameTooLongError(ValueError):
-    pass
 
 # Filter the contents of the ICTD webpage
 for l in ictd_content:
@@ -78,7 +77,7 @@ for l in ictd_content:
         break
 
 cassette_tables['c1']['42069666'] = 'The beast'
-cassette_tables['c3']['99999999'] = 'Que wa te paso a ti'
+# cassette_tables['c3']['99999999'] = 'Que wa te paso a ti'
 
 # Read msk.lut and generate a list with installed masks
 try:
@@ -105,6 +104,22 @@ unknown_masks = list(installed_masks.difference(known_masks))
 if not(unknown_masks):
     sys.exit("There are no unknown masks installed")
 
+file_lines = []
+for m in unknown_masks:
+    # Most of this code is to format the entry into masks.lut (smh)
+    col = 'c' + msk_dict[m]
+    try:
+        name = cassette_tables[col][m]
+    except KeyError:
+        print(f"Error: No information available for {m} barcode in ICTD")
+    else:
+        if len(name) > len_n_max:
+            raise NameTooLongError(
+                f"The name: {name} is too long to be written in {masks_file}"
+            )
+        len_gap1 = len_nb - len(name + m)
+        file_lines.append(name + ' ' * len_gap1 + m + ' ' * len_gap2 + '0\n')
+
 # Set string with current date to generate backup copy of masks.lut
 curr_date = datetime.strftime(datetime.now(), "%Y%m%d")
 try:
@@ -117,18 +132,9 @@ except OSError as e:
 print(f"Updating {masks_file} ...")
 try:
     with open(masks_path, 'a') as f:
-        for m in unknown_masks:
-            # Most of this code is to format the entry into masks.lut (smh)
-            col = 'c' + msk_dict[m]
-            name = cassette_tables[col][m]
-            if len(name) > len_n_max:
-                raise NameTooLongError(
-                    f"The name: {name} is too long to be written in {masks_file}"
-                )
-            print(f"Adding {name} - barcode {m}")
-            len_gap1 = len_nb - len(name + m)
-            file_line = name + ' ' * len_gap1 + m + ' ' * len_gap2 + '0\n'
-            f.write(file_line)
+        for fl in file_lines:
+            print(f"Adding line: {fl}")
+            f.write(fl)
 except FileNotFoundError as e:
     print(e)
     sys.exit(f"File {masks_file} doesn't exist")
